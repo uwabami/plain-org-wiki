@@ -3,7 +3,9 @@
 ;; Copyright (C) 2015 Oleh Krehel
 
 ;; Author: Oleh Krehel <ohwoeowho@gmail.com>
-;; Version: 0.1.0
+;;         Youhei SASAKI <uwabami@gfd-dennou.org>
+;; Version: 0.1.1
+;; Package-Requires: nil
 ;; Keywords: completion
 
 ;; This file is not part of GNU Emacs
@@ -23,10 +25,13 @@
 
 ;;; Commentary:
 ;;
+;; Original Ver. https://github.com/abo-abo/plain-org-wiki
+;; Modified:
+;;  - add ido support.
+;;  - update ivy, find-file-in-project, helm support.
 
 ;;; Code:
-
-(require 'ivy)
+(eval-and-compile (require 'cl-lib))
 
 (defgroup plain-org-wiki nil
   "Simple jump-to-org-file package."
@@ -57,49 +62,73 @@ Each cons cell is a name and file path."
   (cl-mapcan #'pow-files-in-dir
              (cons pow-directory pow-extra-dirs)))
 
-(defun pow-files-recursive ()
-  "Return .org files in `pow-directory' and subdirectories."
-  (let ((ffip-project-root pow-directory))
-    (delq nil
-          (mapcar (lambda (x)
-                    (when (equal (file-name-extension (car x)) "org")
-                      (file-name-sans-extension (car x))))
-                  (ffip-project-search "" nil)))))
-
-(defun pow-find-file (x)
-  "Open X as a file with org extension in `pow-directory'."
-  (when (consp x)
-    (setq x (cdr x)))
-  (with-ivy-window
-    (if (file-exists-p x)
-        (find-file x)
-      (if (string-match "org$" x)
-          (find-file
-           (expand-file-name x pow-directory))
-        (find-file
-         (expand-file-name
-          (format "%s.org" x) pow-directory))))))
-
-;;;###autoload
-(defun plain-org-wiki-helm ()
-  "Select an org-file to jump to."
-  (interactive)
-  (require 'helm)
-  (require 'helm-multi-match)
-  (helm :sources
-        '(((name . "Projects")
-           (candidates . pow-files)
-           (action . pow-find-file))
-          ((name . "Create org-wiki")
-           (dummy)
-           (action . pow-find-file)))))
 
 ;;;###autoload
 (defun plain-org-wiki ()
-  "Select an org-file to jump to."
+  "Ido interface for plain org wiki"
   (interactive)
-  (ivy-read "pattern: " (pow-files)
-            :action 'pow-find-file))
+  (find-file
+   (cdr
+    (let ((files (pow-files)))
+      (assoc
+       (ido-completing-read "Open plain org wiki: "
+                            (with-temp-buffer
+                              (loop for name in files
+                                    collect (format "%s" (car name)))))
+       files)))))
+
+(when (locate-library "find-file-in-project")
+  (require 'find-file-in-project)
+  (defun pow-files-recursive ()
+    "Return .org files in `pow-directory' and subdirectories."
+    (let ((ffip-project-root pow-directory))
+      (delq nil
+            (mapcar (lambda (x)
+                      (when (equal (file-name-extension (car x)) "org")
+                        (file-name-sans-extension (car x))))
+                    (ffip-project-search "" nil)))))
+  )
+
+(when (locate-library "ivy")
+  (require 'ivy)
+  (defun pow-find-file (x)
+    "Open X as a file with org extension in `pow-directory'."
+    (when (consp x)
+      (setq x (cdr x)))
+    (with-ivy-window
+     (if (file-exists-p x)
+         (find-file x)
+       (if (string-match "org$" x)
+           (find-file
+            (expand-file-name x pow-directory))
+         (find-file
+          (expand-file-name
+           (format "%s.org" x) pow-directory))))))
+
+  ;;;###autoload
+  (defun plain-org-wiki-ivy ()
+    "Select an org-file to jump to."
+    (interactive)
+    (ivy-read "pattern: " (pow-files)
+              :action 'pow-find-file))
+
+  (when (locate-library "helm")
+    (require 'helm)
+    (require 'helm-multi-match)
+
+;;;###autoload
+    (defun plain-org-wiki-helm ()
+      "Select an org-file to jump to."
+      (interactive)
+      (helm :sources
+            '(((name . "Projects")
+               (candidates . pow-files)
+               (action . pow-find-file))
+              ((name . "Create org-wiki")
+               (dummy)
+               (action . pow-find-file)))))
+    )
+  )
 
 (provide 'plain-org-wiki)
 
