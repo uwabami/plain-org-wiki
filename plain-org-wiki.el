@@ -26,8 +26,10 @@
 ;;; Commentary:
 ;;
 ;; Original Ver. https://github.com/abo-abo/plain-org-wiki
+;;               and https://github.com/caiorss/org-wiki
 ;; Modified:
 ;;  - add ido support.
+;;  - org custom type: [[wiki:Index][Index]]
 ;;  - update ivy, find-file-in-project, helm support.
 
 ;;; Code:
@@ -42,8 +44,45 @@
   "Directory where files for `plain-org-wiki' are stored."
   :type 'directory)
 
+(defcustom pow-template
+  (concat "#+TITLE: %n\n"
+          "#+DESCRIPTION:\n"
+          "#+KEYWORDS:\n"
+          "#+STARTUP:  content\n"
+          "\n\n"
+          "- [[wiki:index][Index]]\n\n"
+          "- Related: \n\n"
+          "* %n\n"
+          )
+  "Default template used to create org-wiki pages/files.
+- %n - is replaced by the page name.
+- %d - is replaced by current date in the format year-month-day."
+
+  :type 'string
+  :group 'org-wiki
+  )
+
 (defvar pow-extra-dirs nil
   "List of extra directories in addition to `pow-directory'.")
+
+(defun pow-header ()
+  "Insert a header at the top of the file."
+  (interactive)
+  (save-excursion
+    (let*
+        ;; replace '%n' by page title
+        ((text1 (replace-regexp-in-string
+                 "%n"
+                 (file-name-base (buffer-file-name)) pow-template))
+         ;; Replace %d by current date in the format %Y-%m-%d
+         (text2 (replace-regexp-in-string
+                 "%d"
+                 (format-time-string "%Y-%m-%d")
+                 text1
+                 )))
+      ;; Got to top of file
+      (goto-char (point-min))
+      (insert text2))))
 
 (defun pow-files-in-dir (dir)
   "Return a list of cons cells for DIR.
@@ -62,6 +101,45 @@ Each cons cell is a name and file path."
   (cl-mapcan #'pow-files-in-dir
              (cons pow-directory pow-extra-dirs)))
 
+(defun pow--org-link (path desc backend)
+  "Creates an html org-wiki pages when  exporting to html."
+  (cl-case backend
+    (html (format
+           "<a href='%s.html'>%s</a>"
+           path
+           (or desc path)))))
+
+(defun pow--page->file (pagename)
+  "Get the corresponding wiki file (*.org) to the wiki PAGENAME."
+  (concat (file-name-as-directory pow-directory)
+          pagename
+          ".org"
+          ))
+
+(defun pow--open-page (pagename)
+  "Open or create new a org-wiki page (PAGENAME) by name."
+  (let ((pow-file (pow--page->file pagename)))
+    (if (not (file-exists-p pow-file))
+        ;; Action executed if file doesn't exist.
+        (progn (find-file  pow-file)
+               ;; Insert header at top of page
+               (pow-header)
+               ;; Save current page buffer
+               (save-buffer)
+               )
+      ;; open file in writable mode.
+      (find-file  pow-file)
+      )))
+
+;;; Custom Protocols
+(add-hook 'org-mode-hook
+          (lambda ()
+            ;; Hyperlinks to other org-wiki pages
+            ;;
+            ;; wiki:<page-name> or [[wiki:<page-name>][<page-name>]]
+            (org-add-link-type  "wiki"
+                                #'pow--open-page
+                                #'pow--org-link )))
 
 ;;;###autoload
 (defun plain-org-wiki ()
